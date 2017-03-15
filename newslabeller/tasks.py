@@ -16,6 +16,19 @@ POST_WRITE_BACK = True
 
 
 @app.task(serializer='json', bind=True)
+def label_from_story_text(self, story):
+    '''
+    Take in a story with sentences and tag it with labels based on what the model says
+    '''
+    try:
+        results = get_labels(story['story_text'])
+        _post_tags_from_results(story, results)
+    except Exception as e:
+        logger.exception("Exception - something bad happened")
+        raise self.retry(exc=e)
+
+
+@app.task(serializer='json', bind=True)
 def label_from_sentences(self, story):
     '''
     Take in a story with sentences and tag it with labels based on what the model says
