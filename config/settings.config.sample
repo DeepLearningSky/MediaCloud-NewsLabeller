@@ -1,0 +1,12 @@
+[queue]
+broker_url = redis://localhost:6379/0
+backend_url = redis://localhost:6379/1
+
+[mediacloud]
+key = MY_KEY
+stories_per_fetch = 200
+topic_id = 0
+
+[labeller]
+host = http://127.0.0.1
+port = 8000
