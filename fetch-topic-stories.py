@@ -1,28 +1,15 @@
-import os
-import sys
 import time
-import json
-import logging.config
+import logging
 
 import newslabeller.tasks
-from newslabeller import settings, mc_server, base_dir, NYT_LABELER_1_0_0_TAG_ID, nytlabeller
+from newslabeller import settings, mc_server, db, NYT_LABELER_1_0_0_TAG_ID, RELABEL, stories_to_fetch, \
+    mode, MODE_WRITE_MC_TAGS, MODE_WRITE_TO_DB
 
-# set to true to re label ones that have already been labeled - set to false for no redos
-RELABEL = True
-
-# set up logging
-with open(os.path.join(base_dir,'config','logging.json'), 'r') as f:
-    logging_config = json.load(f)
-logging.config.dictConfig(logging_config)
 log = logging.getLogger(__name__)
-log.info("---------------------------------------------------------------------------")
-requests_logger = logging.getLogger('requests')
-requests_logger.setLevel(logging.INFO)
 
-# load settings
-stories_to_fetch = settings.get('mediacloud', 'stories_per_fetch')
+# load task-specific
 topic_id = settings.get('mediacloud', 'topic_id')
-log.info("Fetching {} stories by page from Topic #{} to label".format(stories_to_fetch, topic_id) )
+log.info("Fetching all stories from Topic #{}".format(topic_id))
 
 more_stories = True
 next_link_id = None
@@ -49,23 +36,31 @@ while more_stories:
     story_ids = [str(sid) for sid in story_ids]
     stories_with_text = mc_server.storyList("stories_id:("+" ".join(story_ids)+")", text=True, rows=stories_to_fetch)
     text_time = time.time()
-    log.debug("    fetched text in {} seconds".format(text_time - story_time))
+    log.debug("    fetched {} text in {} seconds".format(len(stories_with_text), text_time - story_time))
 
     # now toss them into the queue
     queued = 0
     already_labeled = 0
     for story in stories_with_text:
-        tags = [tag['tags_id'] for tag in story['story_tags']]
-        already_labeled = NYT_LABELER_1_0_0_TAG_ID in tags
-        if RELABEL or not already_labeled:
-            newslabeller.tasks.label_from_story_text.delay(story)
-            queued += 1
-        else:
-            already_labeled += 1
+        if mode == MODE_WRITE_MC_TAGS:
+            already_labeled = NYT_LABELER_1_0_0_TAG_ID in story['story_tags']
+            if RELABEL or not already_labeled:
+                newslabeller.tasks.label_from_story_text.delay(story)
+                queued += 1
+            else:
+                already_labeled += 1
+        elif mode == MODE_WRITE_TO_DB:
+            story_exists = db.storyExists(story['stories_id'])
+            if RELABEL or not story_exists:
+                newslabeller.tasks.save_labels_to_db.delay(story)
+                queued += 1
+            else:
+                already_labeled += 1
     queued_time = time.time()
     log.debug("    queued in {} seconds".format(queued_time - text_time))
 
     # and report back timing on this round
     log.info("    queued {} stories in {} seconds ({} already labelled)".format(queued, time.time() - start_time, already_labeled))
+    #sys.exit()
 
 log.info("Done with entire topic")

@@ -1,3 +1,7 @@
+[labeller]
+host = http://127.0.0.1
+port = 8000
+
 [queue]
 broker_url = redis://localhost:6379/0
 backend_url = redis://localhost:6379/1
@@ -6,7 +10,10 @@ backend_url = redis://localhost:6379/1
 key = MY_KEY
 stories_per_fetch = 200
 topic_id = 0
+topic_id = 1365
+query = *
+last_processed_stories_id = 0
 
-[labeller]
-host = http://127.0.0.1
-port = 8000
+[db]
+host: 127.0.0.1
+name: mc_news_labeller

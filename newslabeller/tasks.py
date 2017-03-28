@@ -2,14 +2,14 @@ from __future__ import absolute_import
 from celery.utils.log import get_task_logger
 import mediacloud.api
 
-from newslabeller import mc_server, NYT_LABELER_1_0_0_TAG_ID, NYT_LABELS_TAG_SET_NAME
+from newslabeller import mc_server, db, NYT_LABELER_1_0_0_TAG_ID, NYT_LABELS_TAG_SET_NAME
 from newslabeller.celery import app
 from newslabeller.nytlabeller import get_labels
 
 logger = get_task_logger(__name__)
 
 # subjectively determined based on random experimentation
-CONFIDENCE_THRESHOLD = 0.70
+RELEVANCE_THRESHOLD = 0.50
 
 # helpful to set this to False when you're debugging
 POST_WRITE_BACK = True
@@ -29,14 +29,16 @@ def label_from_story_text(self, story):
 
 
 @app.task(serializer='json', bind=True)
-def label_from_sentences(self, story):
-    '''
-    Take in a story with sentences and tag it with labels based on what the model says
-    '''
-    text = " ".join([sentence['sentence'] for sentence in story['story_sentences']])
+def save_labels_to_db(self, story):
     try:
-        results = get_labels(text)
-        _post_tags_from_results(story, results)
+        results = get_labels(story['story_text'])
+        taxonomic_over_threshold = [l['label'] for l in results['taxonomies'] if float(l['score']) > CONFIDENCE_THRESHOLD]
+        descriptors_over_threshold = [l['label'] for l in results['descriptors600'] if float(l['score']) > CONFIDENCE_THRESHOLD]
+        db.addStory(story, {
+            'all_labels': results,
+            'taxonomic_over_threshold': taxonomic_over_threshold,
+            'descriptors_over_threshold': descriptors_over_threshold,
+        })
     except Exception as e:
         logger.exception("Exception - something bad happened")
         raise self.retry(exc=e)
@@ -51,9 +53,9 @@ def _post_tags_from_results(story, results):
         mediacloud.api.StoryTag(story['stories_id'], tags_id=NYT_LABELER_1_0_0_TAG_ID)
     ]
     # only tag it with ones that score really high
-    taxonomic_classifiers = results['taxonomies']
-    for label in taxonomic_classifiers:
-        if float(label['score']) > CONFIDENCE_THRESHOLD:
+    descriptors = results['descriptors600']
+    for label in descriptors:
+        if float(label['score']) > RELEVANCE_THRESHOLD:
             story_tags.append(
                 mediacloud.api.StoryTag(story['stories_id'], tag_set_name=NYT_LABELS_TAG_SET_NAME, tag_name=label['label'])
             )
