@@ -20,7 +20,7 @@ def get_labels(story_text):
 def _query(data):
     try:
         r = requests.post(_get_url(), json=data)
-        log.debug('labeller says %r', r.content)
+        # log.debug('labeller says %r', r.content)
         return r.json()
     except requests.exceptions.RequestException as e:
         log.exception(e)
